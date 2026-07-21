@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
 import siteConfig from '../site.config';
 import { useToast, useAppSettings } from './_app';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = 'https://ohyah-ytback.hf.space';
 
 export default function Home() {
   const showToast = useToast();
@@ -18,6 +19,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('video');
   const [downloadJob, setDownloadJob] = useState(null);
   const [history, setHistory] = useState([]);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     fetchPlatforms();
@@ -28,29 +30,24 @@ export default function Home() {
     try {
       const res = await fetch(`${API_BASE}/api/platforms`);
       const data = await res.json();
-      setPlatforms(data);
+      setPlatforms(Array.isArray(data) ? data : data.platforms || []);
     } catch (error) {
       console.error('Failed to fetch platforms:', error);
     }
   };
 
   const loadHistory = () => {
-    const stored = localStorage.getItem('streamvault_history');
+    const stored = localStorage.getItem('clipvault_history');
     if (stored) {
       try {
-        setHistory(JSON.parse(stored).slice(0, 5));
-      } catch (e) {
-        console.error('History parse error:', e);
-      }
+        setHistory(JSON.parse(stored).slice(0, 4));
+      } catch (e) {}
     }
   };
 
   const detectPlatform = (inputUrl) => {
-    if (!inputUrl) {
-      setDetectedPlatform(null);
-      return;
-    }
-    const platformPatterns = {
+    if (!inputUrl) { setDetectedPlatform(null); return; }
+    const patterns = {
       youtube: /youtube\.com|youtu\.be/i,
       facebook: /facebook\.com|fb\.watch/i,
       instagram: /instagram\.com/i,
@@ -60,15 +57,9 @@ export default function Home() {
       vimeo: /vimeo\.com/i,
       pinterest: /pinterest\.com/i,
       twitch: /twitch\.tv/i,
-      soundcloud: /soundcloud\.com/i,
-      dailymotion: /dailymotion\.com/i,
     };
-
-    for (const [platform, pattern] of Object.entries(platformPatterns)) {
-      if (pattern.test(inputUrl)) {
-        setDetectedPlatform(platform);
-        return;
-      }
+    for (const [platform, pattern] of Object.entries(patterns)) {
+      if (pattern.test(inputUrl)) { setDetectedPlatform(platform); return; }
     }
     setDetectedPlatform(null);
   };
@@ -86,7 +77,6 @@ export default function Home() {
 
   const handleAnalyze = async () => {
     if (!url || loading) return;
-    
     setLoading(true);
     setMetadata(null);
     setFormats([]);
@@ -100,13 +90,13 @@ export default function Home() {
       });
       
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || 'Extraction failed');
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.detail?.[0]?.msg || error.message || 'Extraction failed');
       }
       
       const data = await res.json();
       setMetadata(data.metadata);
-      setFormats(data.formats);
+      setFormats(data.formats || []);
       showToast('Media analyzed successfully', 'success');
     } catch (error) {
       showToast(error.message || 'Failed to analyze URL', 'error');
@@ -115,55 +105,48 @@ export default function Home() {
     }
   };
 
-  const filteredFormats = formats.filter(f => {
-    if (activeTab === 'video') return f.type === 'video';
-    if (activeTab === 'audio') return f.type === 'audio';
-    if (activeTab === 'thumbnail') return f.type === 'thumbnail';
-    return true;
-  }).sort((a, b) => {
-    const aRes = parseInt(a.resolution) || 0;
-    const bRes = parseInt(b.resolution) || 0;
-    return bRes - aRes;
-  });
+  const videoFormats = formats.filter(f => f.has_video || (f.ext === 'mp4' && f.resolution));
+  const audioFormats = formats.filter(f => f.has_audio || f.ext === 'm4a' || f.ext === 'mp3');
+
+  const filteredFormats = (activeTab === 'video' ? videoFormats : audioFormats)
+    .filter(f => f.format_id && !['sd', 'hd'].includes(f.format_id))
+    .sort((a, b) => (b.tbr || 0) - (a.tbr || 0));
 
   const handleDownload = async () => {
     if (!selectedFormat || !url) return;
-    
     try {
       const res = await fetch(`${API_BASE}/api/download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, format_id: selectedFormat.id }),
+        body: JSON.stringify({ url, format_id: selectedFormat.format_id }),
       });
       
       if (!res.ok) throw new Error('Download failed');
-      
       const { job_id } = await res.json();
-      setDownloadJob({ id: job_id, status: 'preparing', progress: 0 });
+      setDownloadJob({ id: job_id, status: 'downloading', progress: 0 });
       pollProgress(job_id);
     } catch (error) {
       showToast(error.message || 'Download failed', 'error');
     }
   };
 
-  const pollProgress = async (jobId) => {
+  const pollProgress = (jobId) => {
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`${API_BASE}/api/progress/${jobId}`);
         const job = await res.json();
-        
         setDownloadJob(job);
         
         if (job.status === 'completed') {
           clearInterval(interval);
           downloadFile(jobId);
-        } else if (job.status === 'failed' || job.status === 'cancelled') {
+        } else if (job.status === 'failed') {
           clearInterval(interval);
-          showToast(`Download ${job.status}`, 'error');
+          showToast('Download failed', 'error');
+          setDownloadJob(null);
         }
       } catch (error) {
         clearInterval(interval);
-        showToast('Progress check failed', 'error');
       }
     }, 1000);
   };
@@ -172,15 +155,17 @@ export default function Home() {
     try {
       const res = await fetch(`${API_BASE}/api/file/${jobId}`);
       const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
+      const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `streamvault_${jobId}.mp4`;
+      a.href = downloadUrl;
+      a.download = `clipvault_${jobId}.${selectedFormat?.ext || 'mp4'}`;
+      document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(downloadUrl);
       
       saveToHistory();
-      showToast('Download completed', 'success');
+      showToast('Download completed!', 'success');
       setDownloadJob(null);
     } catch (error) {
       showToast('File download failed', 'error');
@@ -193,18 +178,31 @@ export default function Home() {
       id: Date.now().toString(),
       timestamp: Date.now(),
       url,
-      platform: detectedPlatform || 'unknown',
+      platform: detectedPlatform || metadata.platform || 'unknown',
       title: metadata.title,
       thumbnail: metadata.thumbnail,
       type: activeTab,
       resolution: selectedFormat?.resolution,
-      filename: `${metadata.title}.${selectedFormat?.extension || 'mp4'}`,
+      filename: `${metadata.title?.slice(0, 50)}.${selectedFormat?.ext || 'mp4'}`,
       status: 'completed',
     };
-    
     const updated = [item, ...history].slice(0, 100);
-    setHistory(updated);
-    localStorage.setItem('streamvault_history', JSON.stringify(updated));
+    setHistory(updated.slice(0, 4));
+    localStorage.setItem('clipvault_history', JSON.stringify(updated));
+  };
+
+  const formatDuration = (seconds) => {
+    if (!seconds) return '';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const formatViews = (views) => {
+    if (!views) return '';
+    if (views >= 1000000) return (views / 1000000).toFixed(1) + 'M';
+    if (views >= 1000) return (views / 1000).toFixed(1) + 'K';
+    return views.toString();
   };
 
   return (
@@ -212,458 +210,363 @@ export default function Home() {
       <Head>
         <title>{siteConfig.name} - Video Downloader</title>
         <meta name="description" content={siteConfig.description} />
-        <script type="application/ld+json">
-          {JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "SoftwareApplication",
-            "name": siteConfig.name,
-            "applicationCategory": "MultimediaApplication",
-            "operatingSystem": "Web",
-            "description": siteConfig.description,
-          })}
-        </script>
       </Head>
 
       <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }}>
         {/* Header */}
-        <header style={{
-          background: 'var(--bg-secondary)',
-          borderBottom: '1px solid var(--border)',
-          padding: '16px 24px',
+        <header className="glass" style={{
           position: 'sticky',
           top: 0,
           zIndex: 100,
+          padding: '12px 16px',
+          borderBottom: '1px solid var(--border-glass)',
         }}>
-          <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>
-              <i className="fas fa-cloud-arrow-down" style={{ color: 'var(--accent)', marginRight: 12 }}></i>
-              {siteConfig.name}
-            </h1>
-            <nav style={{ display: 'flex', gap: 24 }}>
-              <a href="/bulk" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
-                <i className="fas fa-layer-group" style={{ marginRight: 6 }}></i>Bulk
-              </a>
-              <a href="/history" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
-                <i className="fas fa-clock-rotate-left" style={{ marginRight: 6 }}></i>History
-              </a>
-              <a href="/settings" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
-                <i className="fas fa-gear" style={{ marginRight: 6 }}></i>Settings
-              </a>
+          <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <img src={siteConfig.logo} alt={siteConfig.name} style={{ height: 36, width: 36, borderRadius: 10 }} />
+              <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                {siteConfig.name}
+              </span>
+            </Link>
+
+            {/* Desktop Nav */}
+            <nav style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <Link href="/bulk" style={navLinkStyle}>
+                <i className="fas fa-layer-group"></i> <span className="nav-text">Bulk</span>
+              </Link>
+              <Link href="/history" style={navLinkStyle}>
+                <i className="fas fa-clock-rotate-left"></i> <span className="nav-text">History</span>
+              </Link>
+              <Link href="/settings" style={navLinkStyle}>
+                <i className="fas fa-gear"></i> <span className="nav-text">Settings</span>
+              </Link>
             </nav>
+
+            {/* Mobile Menu Button */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              style={{
+                display: 'none',
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                padding: '8px 12px',
+                cursor: 'pointer',
+                color: 'var(--text-primary)',
+                fontSize: 18,
+              }}
+              className="mobile-menu-btn"
+            >
+              <i className={`fas fa-${mobileMenuOpen ? 'times' : 'bars'}`}></i>
+            </button>
           </div>
+
+          {/* Mobile Menu */}
+          {mobileMenuOpen && (
+            <div style={{
+              marginTop: 12,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+            }} className="mobile-menu">
+              <Link href="/bulk" style={mobileNavStyle} onClick={() => setMobileMenuOpen(false)}>
+                <i className="fas fa-layer-group" style={{ width: 24 }}></i> Bulk Download
+              </Link>
+              <Link href="/history" style={mobileNavStyle} onClick={() => setMobileMenuOpen(false)}>
+                <i className="fas fa-clock-rotate-left" style={{ width: 24 }}></i> History
+              </Link>
+              <Link href="/settings" style={mobileNavStyle} onClick={() => setMobileMenuOpen(false)}>
+                <i className="fas fa-gear" style={{ width: 24 }}></i> Settings
+              </Link>
+            </div>
+          )}
         </header>
 
-        <main style={{ maxWidth: 900, margin: '0 auto', padding: '40px 24px' }}>
+        <main style={{ maxWidth: 800, margin: '0 auto', padding: '24px 16px 60px' }}>
           {/* Hero */}
-          <div style={{ textAlign: 'center', marginBottom: 48 }}>
-            <h2 style={{ fontSize: 48, fontWeight: 800, marginBottom: 16, color: 'var(--text-primary)', lineHeight: 1.2 }}>
-              Download Videos From Any Platform
-            </h2>
-            <p style={{ fontSize: 18, color: 'var(--text-secondary)', maxWidth: 600, margin: '0 auto', lineHeight: 1.6 }}>
-              Fast, secure, and free video downloader. Support for multiple platforms with original quality.
+          <div style={{ textAlign: 'center', marginBottom: 32, animation: 'fadeInUp 0.5s ease' }}>
+            <h1 style={{ 
+              fontSize: 'clamp(28px, 6vw, 44px)', 
+              fontWeight: 900, 
+              marginBottom: 12,
+              color: 'var(--text-primary)',
+              letterSpacing: '-0.03em',
+              lineHeight: 1.1,
+            }}>
+              Download Videos From
+              <br />
+              <span className="gradient-text">Any Platform</span>
+            </h1>
+            <p style={{ 
+              fontSize: 'clamp(14px, 2.5vw, 17px)', 
+              color: 'var(--text-secondary)', 
+              maxWidth: 500, 
+              margin: '0 auto',
+              lineHeight: 1.5,
+            }}>
+              Fast, secure, free. Paste your link and download in seconds.
             </p>
           </div>
 
-          {/* URL Input */}
-          <div style={{ marginBottom: 32 }}>
-            <div style={{
-              background: 'var(--bg-secondary)',
-              border: '2px solid var(--border)',
-              borderRadius: '14px',
-              padding: '8px',
-              display: 'flex',
-              gap: 8,
-              transition: 'border-color 0.2s',
-              boxShadow: 'var(--shadow-md)',
+          {/* URL Input Card */}
+          <div className="glass-card" style={{ padding: 'clamp(16px, 3vw, 24px)', marginBottom: 24 }}>
+            <div style={{ 
+              display: 'flex', 
+              gap: 8, 
+              background: 'var(--bg-tertiary)',
+              borderRadius: 16,
+              padding: 6,
+              border: '1px solid var(--border)',
+              flexWrap: 'wrap',
             }}>
-              {detectedPlatform && (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '0 12px',
-                  color: 'var(--accent)',
-                  fontSize: 20,
-                }}>
-                  <i className={`fab fa-${detectedPlatform}`}></i>
-                </div>
-              )}
-              <input
-                type="text"
-                value={url}
-                onChange={(e) => {
-                  setUrl(e.target.value);
-                  detectPlatform(e.target.value);
-                }}
-                placeholder="Paste video URL here..."
-                style={{
-                  flex: 1,
-                  border: 'none',
-                  outline: 'none',
-                  background: 'transparent',
-                  fontSize: 16,
-                  color: 'var(--text-primary)',
-                  padding: '12px 8px',
-                }}
-                onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
-              />
-              {url && (
-                <button
-                  onClick={() => { setUrl(''); setDetectedPlatform(null); }}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--text-tertiary)',
-                    cursor: 'pointer',
-                    padding: '0 8px',
-                    fontSize: 16,
-                  }}
-                >
-                  <i className="fas fa-times"></i>
-                </button>
-              )}
-              <button
-                onClick={handlePaste}
-                style={{
-                  background: 'var(--bg-tertiary)',
-                  border: 'none',
-                  borderRadius: '10px',
-                  padding: '12px 16px',
-                  cursor: 'pointer',
-                  color: 'var(--text-secondary)',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <i className="fas fa-paste" style={{ marginRight: 6 }}></i>Paste
-              </button>
-              <button
-                onClick={handleAnalyze}
-                disabled={!url || loading}
-                style={{
-                  background: !url || loading ? 'var(--bg-tertiary)' : 'var(--accent)',
-                  border: 'none',
-                  borderRadius: '10px',
-                  padding: '12px 24px',
-                  cursor: !url || loading ? 'not-allowed' : 'pointer',
-                  color: !url || loading ? 'var(--text-tertiary)' : '#fff',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  whiteSpace: 'nowrap',
-                  transition: 'all 0.2s',
-                }}
-              >
-                {loading ? (
-                  <><i className="fas fa-spinner fa-spin" style={{ marginRight: 6 }}></i>Analyzing</>
-                ) : (
-                  <><i className="fas fa-magnifying-glass" style={{ marginRight: 6 }}></i>Analyze</>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, minWidth: 200 }}>
+                {detectedPlatform && (
+                  <i className={`fab fa-${detectedPlatform}`} style={{ 
+                    fontSize: 20, 
+                    color: 'var(--accent)',
+                    marginLeft: 8,
+                  }}></i>
                 )}
-              </button>
+                <input
+                  type="text"
+                  value={url}
+                  onChange={(e) => { setUrl(e.target.value); detectPlatform(e.target.value); }}
+                  placeholder="Paste video URL here..."
+                  style={{
+                    flex: 1,
+                    border: 'none',
+                    outline: 'none',
+                    background: 'transparent',
+                    fontSize: 15,
+                    color: 'var(--text-primary)',
+                    padding: '12px 4px',
+                    minWidth: 0,
+                  }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
+                />
+                {url && (
+                  <button onClick={() => { setUrl(''); setDetectedPlatform(null); }}
+                    style={iconBtnStyle}>
+                    <i className="fas fa-times"></i>
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={handlePaste} style={secondaryBtnStyle}>
+                  <i className="fas fa-paste"></i> <span className="btn-text">Paste</span>
+                </button>
+                <button onClick={handleAnalyze} disabled={!url || loading}
+                  style={{
+                    ...primaryBtnStyle,
+                    opacity: !url || loading ? 0.5 : 1,
+                    cursor: !url || loading ? 'not-allowed' : 'pointer',
+                  }}>
+                  {loading ? (
+                    <><i className="fas fa-spinner fa-spin"></i> <span className="btn-text">Analyzing</span></>
+                  ) : (
+                    <><i className="fas fa-magnifying-glass"></i> <span className="btn-text">Analyze</span></>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
 
           {/* Loading Skeleton */}
           {loading && (
-            <div style={{ animation: 'fadeIn 0.3s' }}>
-              <div style={{ display: 'flex', gap: 24, marginBottom: 24 }}>
-                <div className="skeleton" style={{ width: 200, height: 120, borderRadius: 14 }}></div>
-                <div style={{ flex: 1 }}>
-                  <div className="skeleton" style={{ height: 24, width: '70%', marginBottom: 12 }}></div>
-                  <div className="skeleton" style={{ height: 16, width: '50%', marginBottom: 8 }}></div>
-                  <div className="skeleton" style={{ height: 16, width: '40%' }}></div>
+            <div className="glass-card" style={{ padding: 24, animation: 'fadeIn 0.3s ease' }}>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <div className="skeleton" style={{ width: 160, height: 100, borderRadius: 12 }}></div>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div className="skeleton" style={{ height: 20, width: '80%', marginBottom: 10 }}></div>
+                  <div className="skeleton" style={{ height: 14, width: '50%', marginBottom: 8 }}></div>
+                  <div className="skeleton" style={{ height: 14, width: '30%' }}></div>
                 </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
-                {[1, 2, 3].map(i => (
-                  <div key={i} className="skeleton" style={{ height: 80, borderRadius: 12 }}></div>
-                ))}
               </div>
             </div>
           )}
 
-          {/* Metadata & Formats */}
+          {/* Metadata & Downloads */}
           {metadata && !loading && (
-            <div style={{ animation: 'slideUp 0.3s' }}>
-              <div style={{
-                background: 'var(--bg-secondary)',
-                borderRadius: '14px',
-                padding: 24,
-                marginBottom: 24,
-                border: '1px solid var(--border)',
-                boxShadow: 'var(--shadow-sm)',
-              }}>
-                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+            <div style={{ animation: 'fadeInUp 0.4s ease' }}>
+              {/* Metadata Card */}
+              <div className="glass-card" style={{ padding: 'clamp(16px, 3vw, 24px)', marginBottom: 20 }}>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                   {metadata.thumbnail && (
-                    <img
-                      src={metadata.thumbnail}
-                      alt={metadata.title}
+                    <img src={metadata.thumbnail} alt={metadata.title}
                       style={{
-                        width: 200,
-                        height: 120,
+                        width: '100%',
+                        maxWidth: 280,
+                        aspectRatio: '16/10',
                         objectFit: 'cover',
                         borderRadius: 14,
+                        flexShrink: 0,
                       }}
                       onError={(e) => { e.target.style.display = 'none'; }}
                     />
                   )}
-                  <div style={{ flex: 1, minWidth: 250 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <span style={{
-                        background: 'var(--accent)',
-                        color: '#fff',
-                        padding: '4px 10px',
-                        borderRadius: 8,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        textTransform: 'capitalize',
-                      }}>
+                  <div style={{ flex: 1, minWidth: 220 }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                      <span style={badgeStyle}>
+                        <i className={`fab fa-${detectedPlatform || metadata.platform?.toLowerCase()}`} style={{ marginRight: 4 }}></i>
                         {metadata.platform || detectedPlatform}
                       </span>
-                      {metadata.isPlaylist && (
-                        <span style={{
-                          background: 'var(--bg-tertiary)',
-                          color: 'var(--text-secondary)',
-                          padding: '4px 10px',
-                          borderRadius: 8,
-                          fontSize: 12,
-                          fontWeight: 500,
-                        }}>
-                          <i className="fas fa-list" style={{ marginRight: 4 }}></i>
-                          Playlist ({metadata.playlistCount || 0})
+                      {metadata.is_playlist && (
+                        <span style={{ ...badgeStyle, background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                          <i className="fas fa-list"></i> Playlist
                         </span>
                       )}
                     </div>
-                    <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12, color: 'var(--text-primary)', wordBreak: 'break-word' }}>
+                    <h3 style={{ 
+                      fontSize: 'clamp(15px, 2.5vw, 18px)', 
+                      fontWeight: 700, 
+                      marginBottom: 10,
+                      color: 'var(--text-primary)',
+                      wordBreak: 'break-word',
+                      lineHeight: 1.4,
+                    }}>
                       {metadata.title}
                     </h3>
-                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', color: 'var(--text-secondary)', fontSize: 13 }}>
-                      {metadata.uploader && <span><i className="fas fa-user" style={{ marginRight: 4 }}></i>{metadata.uploader}</span>}
-                      {metadata.duration && <span><i className="fas fa-clock" style={{ marginRight: 4 }}></i>{metadata.duration}</span>}
-                      {metadata.views && <span><i className="fas fa-eye" style={{ marginRight: 4 }}></i>{metadata.views}</span>}
-                      {metadata.uploadDate && <span><i className="fas fa-calendar" style={{ marginRight: 4 }}></i>{metadata.uploadDate}</span>}
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-secondary)' }}>
+                      {metadata.uploader && <span><i className="fas fa-user" style={{ marginRight: 4, color: 'var(--accent)' }}></i>{metadata.uploader}</span>}
+                      {metadata.duration && <span><i className="fas fa-clock" style={{ marginRight: 4, color: 'var(--accent)' }}></i>{formatDuration(metadata.duration)}</span>}
+                      {metadata.view_count > 0 && <span><i className="fas fa-eye" style={{ marginRight: 4, color: 'var(--accent)' }}></i>{formatViews(metadata.view_count)}</span>}
+                      {metadata.upload_date && <span><i className="fas fa-calendar" style={{ marginRight: 4, color: 'var(--accent)' }}></i>{metadata.upload_date}</span>}
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Download Tabs */}
-              <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
-                {['video', 'audio', 'thumbnail'].map(tab => {
-                  const hasFormats = formats.some(f => f.type === tab);
-                  if (!hasFormats) return null;
-                  return (
-                    <button
-                      key={tab}
-                      onClick={() => { setActiveTab(tab); setSelectedFormat(null); }}
-                      style={{
-                        background: activeTab === tab ? 'var(--accent)' : 'var(--bg-secondary)',
-                        color: activeTab === tab ? '#fff' : 'var(--text-secondary)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 10,
-                        padding: '10px 20px',
-                        cursor: 'pointer',
-                        fontSize: 14,
-                        fontWeight: 600,
-                        textTransform: 'capitalize',
-                        transition: 'all 0.2s',
-                      }}
-                    >
-                      <i className={`fas fa-${tab === 'video' ? 'video' : tab === 'audio' ? 'music' : 'image'}`} style={{ marginRight: 6 }}></i>
-                      {tab}
-                    </button>
-                  );
-                })}
+              {/* Format Tabs */}
+              <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+                {videoFormats.length > 0 && (
+                  <button onClick={() => { setActiveTab('video'); setSelectedFormat(null); }}
+                    style={tabStyle(activeTab === 'video')}>
+                    <i className="fas fa-video"></i> Video
+                  </button>
+                )}
+                {audioFormats.length > 0 && (
+                  <button onClick={() => { setActiveTab('audio'); setSelectedFormat(null); }}
+                    style={tabStyle(activeTab === 'audio')}>
+                    <i className="fas fa-music"></i> Audio
+                  </button>
+                )}
               </div>
 
-              {/* Format Grid */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-                gap: 12,
-                marginBottom: 24,
-              }}>
-                {filteredFormats.map(format => (
-                  <button
-                    key={format.id}
-                    onClick={() => setSelectedFormat(format)}
-                    style={{
-                      background: selectedFormat?.id === format.id ? 'var(--accent)' : 'var(--bg-secondary)',
-                      color: selectedFormat?.id === format.id ? '#fff' : 'var(--text-primary)',
-                      border: `1px solid ${selectedFormat?.id === format.id ? 'var(--accent)' : 'var(--border)'}`,
-                      borderRadius: 12,
-                      padding: 16,
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.2s',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 8 }}>
-                      <span style={{ fontWeight: 700, fontSize: 16 }}>
-                        {format.resolution}
-                        {format.hdr && <span style={{ fontSize: 10, marginLeft: 6, color: 'var(--accent)' }}>HDR</span>}
-                      </span>
-                      {format.recommended && (
-                        <span style={{
-                          background: 'var(--bg-tertiary)',
-                          padding: '2px 8px',
-                          borderRadius: 6,
-                          fontSize: 10,
-                          fontWeight: 600,
-                        }}>
-                          <i className="fas fa-star" style={{ marginRight: 3 }}></i>Best
+              {/* Format List */}
+              {filteredFormats.length > 0 && (
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', 
+                  gap: 10,
+                  marginBottom: 20,
+                }}>
+                  {filteredFormats.map(format => (
+                    <button key={format.format_id} onClick={() => setSelectedFormat(format)}
+                      style={formatCardStyle(selectedFormat?.format_id === format.format_id)}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 6 }}>
+                        <span style={{ fontWeight: 700, fontSize: 15 }}>
+                          {format.resolution || format.ext.toUpperCase()}
                         </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 13, color: selectedFormat?.id === format.id ? 'rgba(255,255,255,0.8)' : 'var(--text-secondary)' }}>
-                      <span>{format.extension.toUpperCase()}</span>
-                      {format.codec && <span> • {format.codec}</span>}
-                      {format.size && <span> • {format.size}</span>}
-                    </div>
-                  </button>
-                ))}
-              </div>
+                        {format.tbr && (
+                          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                            {Math.round(format.tbr)}kbps
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        {format.ext}
+                        {format.vcodec && format.vcodec !== 'none' && ` • ${format.vcodec.split('.')[0]}`}
+                        {format.acodec && format.acodec !== 'none' && ' • Audio'}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Download Button */}
-              <button
-                onClick={handleDownload}
-                disabled={!selectedFormat || (downloadJob && downloadJob.status === 'downloading')}
+              <button onClick={handleDownload}
+                disabled={!selectedFormat || downloadJob}
                 style={{
+                  ...primaryBtnStyle,
                   width: '100%',
-                  background: !selectedFormat ? 'var(--bg-tertiary)' : 'var(--accent)',
-                  color: !selectedFormat ? 'var(--text-tertiary)' : '#fff',
-                  border: 'none',
-                  borderRadius: 12,
                   padding: '16px 24px',
                   fontSize: 16,
                   fontWeight: 700,
-                  cursor: !selectedFormat ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                }}
-              >
-                {downloadJob && downloadJob.status === 'downloading' ? (
-                  <><i className="fas fa-spinner fa-spin"></i> Downloading... {downloadJob.progress}%</>
+                  opacity: !selectedFormat || downloadJob ? 0.5 : 1,
+                  cursor: !selectedFormat || downloadJob ? 'not-allowed' : 'pointer',
+                }}>
+                {downloadJob ? (
+                  <><i className="fas fa-spinner fa-spin"></i> Downloading {downloadJob.progress}%</>
+                ) : selectedFormat ? (
+                  <><i className="fas fa-download"></i> Download {selectedFormat.ext.toUpperCase()} • {selectedFormat.resolution || 'Audio'}</>
                 ) : (
-                  <>
-                    <i className="fas fa-download"></i>
-                    {selectedFormat ? `Download ${selectedFormat.extension.toUpperCase()} • ${selectedFormat.resolution}` : 'Select a format to download'}
-                  </>
+                  <><i className="fas fa-hand-pointer"></i> Select a format to download</>
                 )}
               </button>
 
               {/* Progress Bar */}
-              {downloadJob && downloadJob.status === 'downloading' && (
+              {downloadJob && (
                 <div style={{ marginTop: 16 }}>
-                  <div style={{
-                    height: 6,
-                    background: 'var(--bg-tertiary)',
-                    borderRadius: 3,
-                    overflow: 'hidden',
-                  }}>
+                  <div style={{ height: 6, background: 'var(--bg-tertiary)', borderRadius: 3, overflow: 'hidden' }}>
                     <div style={{
                       height: '100%',
-                      width: `${downloadJob.progress}%`,
+                      width: `${downloadJob.progress || 0}%`,
                       background: 'var(--accent)',
-                      transition: 'width 0.3s',
                       borderRadius: 3,
+                      transition: 'width 0.3s ease',
                     }}></div>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 13, color: 'var(--text-secondary)' }}>
-                    <span>{downloadJob.progress}%</span>
-                    {downloadJob.speed && <span>{downloadJob.speed}</span>}
-                    {downloadJob.eta && <span>ETA: {downloadJob.eta}</span>}
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* Supported Platforms */}
-          <div style={{ marginTop: 64, marginBottom: 48 }}>
-            <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24, textAlign: 'center', color: 'var(--text-primary)' }}>
+          {/* Platforms Grid */}
+          <div style={{ marginTop: 40, marginBottom: 32 }}>
+            <h3 style={{ textAlign: 'center', fontSize: 20, fontWeight: 800, marginBottom: 20, color: 'var(--text-primary)' }}>
               Supported Platforms
             </h3>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-              gap: 16,
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', 
+              gap: 10,
             }}>
-              {platforms.map(platform => (
-                <div
-                  key={platform.id || platform.name}
-                  style={{
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 12,
-                    padding: 20,
-                    textAlign: 'center',
-                    transition: 'transform 0.2s, box-shadow 0.2s',
-                    cursor: 'default',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = 'var(--shadow-md)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
-                  }}
-                >
-                  <div style={{ fontSize: 32, marginBottom: 8, color: 'var(--accent)' }}>
-                    <i className={`fab fa-${platform.id || platform.name.toLowerCase()}`}></i>
+              {platforms.slice(0, 12).map((platform, i) => (
+                <div key={i} className="glass-card"
+                  style={{ padding: 16, textAlign: 'center', cursor: 'default' }}>
+                  <div style={{ fontSize: 28, marginBottom: 6, color: 'var(--accent)' }}>
+                    <i className={`fab fa-${(platform.id || platform.name || '').toLowerCase()}`}></i>
                   </div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-                    {platform.name}
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    {platform.name || platform}
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Recent Downloads */}
+          {/* Recent History */}
           {history.length > 0 && (
-            <div style={{ marginBottom: 48 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                <h3 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Recent Downloads
-                </h3>
-                <a href="/history" style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: 14, fontWeight: 600 }}>
+            <div style={{ marginBottom: 32 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <h3 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)' }}>Recent Downloads</h3>
+                <Link href="/history" style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: 14, fontWeight: 600 }}>
                   View All <i className="fas fa-arrow-right" style={{ marginLeft: 4 }}></i>
-                </a>
+                </Link>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
                 {history.map(item => (
-                  <div
-                    key={item.id}
-                    style={{
-                      background: 'var(--bg-secondary)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 12,
-                      padding: 16,
-                      display: 'flex',
-                      gap: 12,
-                    }}
-                  >
+                  <div key={item.id} className="glass-card" style={{ padding: 14, display: 'flex', gap: 10, alignItems: 'center' }}>
                     {item.thumbnail && (
-                      <img
-                        src={item.thumbnail}
-                        alt={item.title}
-                        style={{ width: 80, height: 60, objectFit: 'cover', borderRadius: 8 }}
-                        onError={(e) => { e.target.style.display = 'none'; }}
-                      />
+                      <img src={item.thumbnail} alt="" style={{ width: 60, height: 44, objectFit: 'cover', borderRadius: 8 }}
+                        onError={(e) => { e.target.style.display = 'none'; }} />
                     )}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-primary)' }}>
                         {item.title}
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
                         {item.platform} • {item.resolution || item.type}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                        {new Date(item.timestamp).toLocaleDateString()}
                       </div>
                     </div>
                   </div>
@@ -673,113 +576,162 @@ export default function Home() {
           )}
 
           {/* Features */}
-          <div style={{ marginBottom: 48 }}>
-            <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24, textAlign: 'center', color: 'var(--text-primary)' }}>
-              Why Choose {siteConfig.name}?
+          <div style={{ marginBottom: 32 }}>
+            <h3 style={{ textAlign: 'center', fontSize: 20, fontWeight: 800, marginBottom: 20, color: 'var(--text-primary)' }}>
+              Why {siteConfig.name}?
             </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
               {[
-                { icon: 'fa-bolt', title: 'Fast Extraction', desc: 'Lightning-fast video analysis and extraction' },
-                { icon: 'fa-shield-halved', title: 'Secure Downloads', desc: 'Your privacy and security is our priority' },
-                { icon: 'fa-expand', title: 'Multi Platform', desc: 'Support for all major video platforms' },
-                { icon: 'fa-database', title: 'Original Quality', desc: 'Download in the highest available quality' },
-              ].map((feature, i) => (
-                <div
-                  key={i}
-                  style={{
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 12,
-                    padding: 24,
-                  }}
-                >
-                  <div style={{ fontSize: 28, color: 'var(--accent)', marginBottom: 12 }}>
-                    <i className={`fas ${feature.icon}`}></i>
+                { icon: 'fa-bolt', title: 'Fast', desc: 'Lightning quick extraction' },
+                { icon: 'fa-shield-halved', title: 'Secure', desc: 'Privacy first approach' },
+                { icon: 'fa-globe', title: 'Multi-Platform', desc: 'All major sites supported' },
+                { icon: 'fa-gem', title: 'HD Quality', desc: 'Best quality available' },
+              ].map((f, i) => (
+                <div key={i} className="glass-card" style={{ padding: 20, textAlign: 'center' }}>
+                  <div style={{ fontSize: 30, marginBottom: 8, color: 'var(--accent)' }}>
+                    <i className={`fas ${f.icon}`}></i>
                   </div>
-                  <h4 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: 'var(--text-primary)' }}>
-                    {feature.title}
-                  </h4>
-                  <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                    {feature.desc}
-                  </p>
+                  <h4 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, color: 'var(--text-primary)' }}>{f.title}</h4>
+                  <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{f.desc}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* FAQ */}
-          <div style={{ marginBottom: 48 }}>
-            <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24, textAlign: 'center', color: 'var(--text-primary)' }}>
-              Frequently Asked Questions
-            </h3>
-            <div style={{ maxWidth: 700, margin: '0 auto' }}>
-              {[
-                { q: 'Is this downloader free to use?', a: 'Yes, StreamVault is completely free to use with no limitations.' },
-                { q: 'Which platforms are supported?', a: 'We support YouTube, Facebook, Instagram, TikTok, Twitter, Reddit, Vimeo, and many more.' },
-                { q: 'Can I download in original quality?', a: 'Yes, you can download videos in the highest available quality including 4K and HDR.' },
-              ].map((faq, i) => (
-                <details
-                  key={i}
-                  style={{
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 12,
-                    marginBottom: 12,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <summary style={{
-                    padding: '16px 20px',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: 15,
-                    color: 'var(--text-primary)',
-                    listStyle: 'none',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}>
-                    {faq.q}
-                    <i className="fas fa-chevron-down" style={{ fontSize: 12, color: 'var(--text-tertiary)' }}></i>
-                  </summary>
-                  <p style={{ padding: '0 20px 16px', fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                    {faq.a}
-                  </p>
-                </details>
-              ))}
+          {/* Footer */}
+          <footer style={{ textAlign: 'center', padding: '24px 0', borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12 }}>
+              <img src={siteConfig.logo} alt="" style={{ height: 28 }} />
+              <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{siteConfig.name}</span>
             </div>
-          </div>
-        </main>
-
-        {/* Footer */}
-        <footer style={{
-          background: 'var(--bg-secondary)',
-          borderTop: '1px solid var(--border)',
-          padding: '32px 24px',
-          marginTop: 64,
-        }}>
-          <div style={{ maxWidth: 1200, margin: '0 auto', textAlign: 'center' }}>
-            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 16, color: 'var(--text-primary)' }}>
-              <i className="fas fa-cloud-arrow-down" style={{ color: 'var(--accent)', marginRight: 8 }}></i>
-              {siteConfig.name}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
               {siteConfig.footerLinks.map(link => (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 14 }}
-                >
+                <Link key={link.href} href={link.href} style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 13 }}>
                   {link.name}
-                </a>
+                </Link>
               ))}
             </div>
-            <p style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
-              {siteConfig.copyright}
-            </p>
-          </div>
-        </footer>
+            <p style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{siteConfig.copyright}</p>
+          </footer>
+        </main>
       </div>
+
+      <style jsx>{`
+        @media (max-width: 640px) {
+          .mobile-menu-btn { display: block !important; }
+          .nav-text { display: none; }
+          .btn-text { display: none; }
+        }
+        @media (min-width: 641px) {
+          .mobile-menu { display: none !important; }
+        }
+      `}</style>
     </>
   );
-          }
+}
+
+const navLinkStyle = {
+  color: 'var(--text-secondary)',
+  textDecoration: 'none',
+  fontSize: 13,
+  fontWeight: 600,
+  padding: '8px 14px',
+  borderRadius: 10,
+  transition: 'all 0.2s',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  background: 'transparent',
+};
+
+const mobileNavStyle = {
+  color: 'var(--text-primary)',
+  textDecoration: 'none',
+  fontSize: 15,
+  fontWeight: 600,
+  padding: '12px 16px',
+  borderRadius: 12,
+  background: 'var(--bg-tertiary)',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+};
+
+const primaryBtnStyle = {
+  background: 'var(--accent)',
+  color: '#fff',
+  border: 'none',
+  borderRadius: 12,
+  padding: '10px 18px',
+  fontSize: 14,
+  fontWeight: 600,
+  cursor: 'pointer',
+  transition: 'all 0.2s',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  whiteSpace: 'nowrap',
+};
+
+const secondaryBtnStyle = {
+  background: 'var(--bg-secondary)',
+  color: 'var(--text-secondary)',
+  border: '1px solid var(--border)',
+  borderRadius: 12,
+  padding: '10px 18px',
+  fontSize: 14,
+  fontWeight: 600,
+  cursor: 'pointer',
+  transition: 'all 0.2s',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  whiteSpace: 'nowrap',
+};
+
+const iconBtnStyle = {
+  background: 'transparent',
+  border: 'none',
+  color: 'var(--text-tertiary)',
+  cursor: 'pointer',
+  padding: 8,
+  fontSize: 16,
+};
+
+const badgeStyle = {
+  background: 'var(--accent)',
+  color: '#fff',
+  padding: '4px 10px',
+  borderRadius: 8,
+  fontSize: 11,
+  fontWeight: 600,
+  display: 'inline-flex',
+  alignItems: 'center',
+};
+
+const tabStyle = (active) => ({
+  background: active ? 'var(--accent)' : 'var(--bg-secondary)',
+  color: active ? '#fff' : 'var(--text-secondary)',
+  border: '1px solid ' + (active ? 'var(--accent)' : 'var(--border)'),
+  borderRadius: 10,
+  padding: '10px 18px',
+  cursor: 'pointer',
+  fontSize: 14,
+  fontWeight: 600,
+  transition: 'all 0.2s',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+});
+
+const formatCardStyle = (selected) => ({
+  background: selected ? 'var(--accent)' : 'var(--bg-secondary)',
+  color: selected ? '#fff' : 'var(--text-primary)',
+  border: '1px solid ' + (selected ? 'var(--accent)' : 'var(--border)'),
+  borderRadius: 12,
+  padding: 14,
+  cursor: 'pointer',
+  textAlign: 'left',
+  transition: 'all 0.2s',
+  width: '100%',
+});
