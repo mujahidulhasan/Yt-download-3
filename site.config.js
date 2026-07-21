@@ -1,20 +1,22 @@
 const siteConfig = {
-  name: 'StreamVault',
-  shortName: 'SV',
-  description: 'Download videos from multiple platforms in high quality',
+  name: 'ClipVlt',
+  shortName: 'CV',
+  description: 'Download videos from Facebook, Instagram, TikTok & more in HD quality',
   seo: {
-    title: 'StreamVault - Multi-Platform Video Downloader',
-    description: 'Download videos from YouTube, Facebook, Instagram, TikTok and more. Fast, secure, free.',
-    keywords: 'video downloader, youtube downloader, facebook downloader, instagram downloader',
-    author: 'StreamVault',
+    title: 'ClipVault - Multi-Platform Video Downloader',
+    description: 'Free online video downloader. Save videos from Facebook, Instagram, TikTok, YouTube & more platforms in HD quality. No registration required.',
+    keywords: 'video downloader, facebook video downloader, instagram downloader, tiktok downloader, youtube downloader, free video download',
+    author: 'ClipVlt',
   },
+  logo: '/logo.png',
   accentColor: '#f97316',
-  supportEmail: 'support@streamvault.com',
-  copyright: '2026 StreamVault. All rights reserved.',
+  supportEmail: 'support@clipvault.com',
+  copyright: '2026 ClipVault. All rights reserved.',
   footerLinks: [
     { name: 'Privacy Policy', href: '/privacy' },
     { name: 'Terms of Service', href: '/terms' },
     { name: 'DMCA', href: '/dmca' },
+    { name: 'Contact', href: 'mailto:support@clipvault.com' },
   ],
 };
 
