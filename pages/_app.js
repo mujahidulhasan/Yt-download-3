@@ -21,15 +21,22 @@ const defaultSettings = {
   reducedMotion: false,
   defaultDownloadType: 'video',
   preferredQuality: 'highest',
+  autoDownload: false,
+  confirmBeforeDownload: true,
+  rememberLastSelection: true,
+  maxHistory: 100,
+  autoDeleteOld: true,
 };
 
 export default function App({ Component, pageProps }) {
   const router = useRouter();
   const [toasts, setToasts] = useState([]);
   const [settings, setSettings] = useState(defaultSettings);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem('streamvault_settings');
+    setMounted(true);
+    const stored = localStorage.getItem('clipvault_settings');
     if (stored) {
       try {
         setSettings({ ...defaultSettings, ...JSON.parse(stored) });
@@ -40,6 +47,7 @@ export default function App({ Component, pageProps }) {
   }, []);
 
   useEffect(() => {
+    if (!mounted) return;
     const root = document.documentElement;
     const isDark = settings.theme === 'dark' || 
       (settings.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -48,21 +56,24 @@ export default function App({ Component, pageProps }) {
     root.style.setProperty('--accent', settings.accentColor);
     root.style.setProperty('--accent-light', settings.accentColor + 'cc');
     root.style.setProperty('--accent-dark', settings.accentColor + 'dd');
+    root.style.setProperty('--accent-glow', settings.accentColor + '33');
     
-    localStorage.setItem('streamvault_settings', JSON.stringify(settings));
-  }, [settings]);
+    localStorage.setItem('clipvault_settings', JSON.stringify(settings));
+  }, [settings, mounted]);
 
   const showToast = (message, type = 'info') => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 3000);
+    }, 3500);
   };
 
   const updateSettings = (newSettings) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
   };
+
+  if (!mounted) return null;
 
   return (
     <>
@@ -72,30 +83,48 @@ export default function App({ Component, pageProps }) {
         <meta name="keywords" content={siteConfig.seo.keywords} />
         <link rel="icon" href="/favicon.ico" />
         <meta name="theme-color" content={settings.accentColor} />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </Head>
 
       <SettingsContext.Provider value={{ settings, updateSettings }}>
         <ToastContext.Provider value={showToast}>
           <Component {...pageProps} />
           
-          <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {toasts.map(toast => (
+          <div style={{ 
+            position: 'fixed', 
+            bottom: 'calc(20px + env(safe-area-inset-bottom))', 
+            right: 20, 
+            zIndex: 9999, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: 8,
+            maxWidth: 'calc(100vw - 40px)',
+          }}>
+            {toasts.map((toast, index) => (
               <div
                 key={toast.id}
+                className="glass-card"
                 style={{
-                  background: toast.type === 'error' ? '#ef4444' : toast.type === 'success' ? '#10b981' : 'var(--bg-secondary)',
+                  background: toast.type === 'error' ? 'rgba(239, 68, 68, 0.9)' : 
+                              toast.type === 'success' ? 'rgba(16, 185, 129, 0.9)' : 
+                              'var(--bg-glass)',
                   color: toast.type === 'error' || toast.type === 'success' ? '#fff' : 'var(--text-primary)',
-                  padding: '12px 20px',
-                  borderRadius: '12px',
-                  boxShadow: 'var(--shadow-lg)',
-                  fontSize: '14px',
+                  padding: '14px 20px',
+                  borderRadius: 16,
+                  fontSize: 14,
                   fontWeight: 500,
-                  animation: 'slideUp 0.25s ease-out',
-                  border: '1px solid var(--border)',
+                  animation: `fadeInUp 0.3s ease forwards`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  backdropFilter: 'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)',
+                  border: '1px solid rgba(255,255,255,0.2)',
                 }}
               >
-                {toast.type === 'success' && '✓ '}
-                {toast.type === 'error' && '✕ '}
+                <i className={`fas fa-${toast.type === 'error' ? 'circle-exclamation' : toast.type === 'success' ? 'circle-check' : 'circle-info'}`}></i>
                 {toast.message}
               </div>
             ))}
@@ -104,4 +133,4 @@ export default function App({ Component, pageProps }) {
       </SettingsContext.Provider>
     </>
   );
-  }
+}
