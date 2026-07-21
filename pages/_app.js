@@ -17,9 +17,10 @@ export function useAppSettings() {
 const defaultSettings = {
   theme: 'system',
   accentColor: '#f97316',
-  reducedMotion: false,
-  defaultDownloadType: 'video',
-  preferredQuality: 'highest',
+  reduceMotion: false,
+  toastEnabled: true,
+  rememberMode: false,
+  lastMode: 'video',
 };
 
 export default function App({ Component, pageProps }) {
@@ -31,8 +32,7 @@ export default function App({ Component, pageProps }) {
     const stored = localStorage.getItem('clipvault_settings');
     if (stored) {
       try {
-        const parsed = JSON.parse(stored);
-        setSettings({ ...defaultSettings, ...parsed });
+        setSettings({ ...defaultSettings, ...JSON.parse(stored) });
       } catch (e) {}
     }
     setReady(true);
@@ -47,14 +47,31 @@ export default function App({ Component, pageProps }) {
     root.classList.toggle('dark', isDark);
     root.style.setProperty('--accent', settings.accentColor);
     root.style.setProperty('--accent-light', settings.accentColor + 'cc');
-    root.style.setProperty('--accent-dark', settings.accentColor + 'dd');
     root.style.setProperty('--accent-glow', settings.accentColor + '33');
+    
+    if (settings.reduceMotion) {
+      root.setAttribute('data-reduce-motion', 'true');
+    } else {
+      root.removeAttribute('data-reduce-motion');
+    }
     
     localStorage.setItem('clipvault_settings', JSON.stringify(settings));
   }, [settings, ready]);
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = () => {
+      if (settings.theme === 'system') {
+        document.documentElement.classList.toggle('dark', mediaQuery.matches);
+      }
+    };
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, [settings.theme]);
+
   const showToast = (message, type = 'info') => {
-    const id = Date.now();
+    if (!settings.toastEnabled && type !== 'error') return;
+    const id = Date.now() + Math.random();
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
@@ -65,30 +82,41 @@ export default function App({ Component, pageProps }) {
     setSettings(prev => ({ ...prev, ...newSettings }));
   };
 
+  if (!ready) return null;
+
   return (
     <>
       <Head>
         <title>{siteConfig.seo.title}</title>
         <meta name="description" content={siteConfig.seo.description} />
         <meta name="keywords" content={siteConfig.seo.keywords} />
-        <link rel="icon" href="/favicon.ico" />
-        <meta name="theme-color" content="#f97316" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <meta name="author" content={siteConfig.seo.author} />
+        <link rel="icon" href={siteConfig.favicon} />
+        <meta name="theme-color" content={settings.accentColor} />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta property="og:title" content={siteConfig.seo.title} />
+        <meta property="og:description" content={siteConfig.seo.description} />
+        <meta property="og:type" content="website" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <script src="https://kit.fontawesome.com/66ce5ae449.js" crossOrigin="anonymous" defer></script>
       </Head>
 
       <SettingsContext.Provider value={{ settings, updateSettings }}>
         <ToastContext.Provider value={showToast}>
-          {ready && <Component {...pageProps} />}
+          <Component {...pageProps} />
           
           <div style={{ 
             position: 'fixed', 
-            bottom: 20, 
-            right: 20, 
+            bottom: 'calc(20px + env(safe-area-inset-bottom))', 
+            right: 16, 
             zIndex: 9999, 
             display: 'flex', 
             flexDirection: 'column', 
             gap: 8,
-            maxWidth: 'calc(100vw - 40px)',
+            maxWidth: 'calc(100vw - 32px)',
+            pointerEvents: 'none',
           }}>
             {toasts.map(toast => (
               <div
@@ -96,11 +124,11 @@ export default function App({ Component, pageProps }) {
                 style={{
                   background: toast.type === 'error' ? 'rgba(239, 68, 68, 0.95)' : 
                               toast.type === 'success' ? 'rgba(16, 185, 129, 0.95)' : 
-                              'rgba(28, 28, 30, 0.9)',
-                  backdropFilter: 'blur(20px)',
-                  WebkitBackdropFilter: 'blur(20px)',
-                  color: '#fff',
-                  padding: '14px 20px',
+                              'var(--bg-card)',
+                  backdropFilter: 'blur(24px)',
+                  WebkitBackdropFilter: 'blur(24px)',
+                  color: toast.type === 'error' || toast.type === 'success' ? '#fff' : 'var(--text-primary)',
+                  padding: '14px 18px',
                   borderRadius: 16,
                   fontSize: 14,
                   fontWeight: 500,
@@ -108,12 +136,15 @@ export default function App({ Component, pageProps }) {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+                  border: '1px solid var(--border-glass)',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+                  pointerEvents: 'auto',
+                  maxWidth: 360,
                 }}
               >
-                <i className={`fas fa-${toast.type === 'error' ? 'circle-exclamation' : toast.type === 'success' ? 'circle-check' : 'circle-info'}`}></i>
-                {toast.message}
+                <i className={`fas fa-${toast.type === 'error' ? 'circle-exclamation' : toast.type === 'success' ? 'circle-check' : 'circle-info'}`} 
+                   style={{ fontSize: 16 }}></i>
+                <span style={{ flex: 1 }}>{toast.message}</span>
               </div>
             ))}
           </div>
