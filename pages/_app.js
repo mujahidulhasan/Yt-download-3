@@ -1,5 +1,4 @@
 import { useState, useEffect, createContext, useContext } from 'react';
-import { useRouter } from 'next/router';
 import Head from 'next/head';
 import siteConfig from '../site.config';
 import '../styles/globals.css';
@@ -17,37 +16,30 @@ export function useAppSettings() {
 
 const defaultSettings = {
   theme: 'system',
-  accentColor: siteConfig.accentColor,
+  accentColor: '#f97316',
   reducedMotion: false,
   defaultDownloadType: 'video',
   preferredQuality: 'highest',
-  autoDownload: false,
-  confirmBeforeDownload: true,
-  rememberLastSelection: true,
-  maxHistory: 100,
-  autoDeleteOld: true,
 };
 
 export default function App({ Component, pageProps }) {
-  const router = useRouter();
   const [toasts, setToasts] = useState([]);
   const [settings, setSettings] = useState(defaultSettings);
-  const [mounted, setMounted] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
     const stored = localStorage.getItem('clipvault_settings');
     if (stored) {
       try {
-        setSettings({ ...defaultSettings, ...JSON.parse(stored) });
-      } catch (e) {
-        console.error('Settings parse error:', e);
-      }
+        const parsed = JSON.parse(stored);
+        setSettings({ ...defaultSettings, ...parsed });
+      } catch (e) {}
     }
+    setReady(true);
   }, []);
 
   useEffect(() => {
-    if (!mounted) return;
+    if (!ready) return;
     const root = document.documentElement;
     const isDark = settings.theme === 'dark' || 
       (settings.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -59,7 +51,7 @@ export default function App({ Component, pageProps }) {
     root.style.setProperty('--accent-glow', settings.accentColor + '33');
     
     localStorage.setItem('clipvault_settings', JSON.stringify(settings));
-  }, [settings, mounted]);
+  }, [settings, ready]);
 
   const showToast = (message, type = 'info') => {
     const id = Date.now();
@@ -73,8 +65,6 @@ export default function App({ Component, pageProps }) {
     setSettings(prev => ({ ...prev, ...newSettings }));
   };
 
-  if (!mounted) return null;
-
   return (
     <>
       <Head>
@@ -82,19 +72,17 @@ export default function App({ Component, pageProps }) {
         <meta name="description" content={siteConfig.seo.description} />
         <meta name="keywords" content={siteConfig.seo.keywords} />
         <link rel="icon" href="/favicon.ico" />
-        <meta name="theme-color" content={settings.accentColor} />
-        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="theme-color" content="#f97316" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
       </Head>
 
       <SettingsContext.Provider value={{ settings, updateSettings }}>
         <ToastContext.Provider value={showToast}>
-          <Component {...pageProps} />
+          {ready && <Component {...pageProps} />}
           
           <div style={{ 
             position: 'fixed', 
-            bottom: 'calc(20px + env(safe-area-inset-bottom))', 
+            bottom: 20, 
             right: 20, 
             zIndex: 9999, 
             display: 'flex', 
@@ -102,26 +90,26 @@ export default function App({ Component, pageProps }) {
             gap: 8,
             maxWidth: 'calc(100vw - 40px)',
           }}>
-            {toasts.map((toast, index) => (
+            {toasts.map(toast => (
               <div
                 key={toast.id}
-                className="glass-card"
                 style={{
-                  background: toast.type === 'error' ? 'rgba(239, 68, 68, 0.9)' : 
-                              toast.type === 'success' ? 'rgba(16, 185, 129, 0.9)' : 
-                              'var(--bg-glass)',
-                  color: toast.type === 'error' || toast.type === 'success' ? '#fff' : 'var(--text-primary)',
+                  background: toast.type === 'error' ? 'rgba(239, 68, 68, 0.95)' : 
+                              toast.type === 'success' ? 'rgba(16, 185, 129, 0.95)' : 
+                              'rgba(28, 28, 30, 0.9)',
+                  backdropFilter: 'blur(20px)',
+                  WebkitBackdropFilter: 'blur(20px)',
+                  color: '#fff',
                   padding: '14px 20px',
                   borderRadius: 16,
                   fontSize: 14,
                   fontWeight: 500,
-                  animation: `fadeInUp 0.3s ease forwards`,
+                  animation: 'fadeInUp 0.3s ease forwards',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
-                  backdropFilter: 'blur(20px)',
-                  WebkitBackdropFilter: 'blur(20px)',
                   border: '1px solid rgba(255,255,255,0.2)',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
                 }}
               >
                 <i className={`fas fa-${toast.type === 'error' ? 'circle-exclamation' : toast.type === 'success' ? 'circle-check' : 'circle-info'}`}></i>
