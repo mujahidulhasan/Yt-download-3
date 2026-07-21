@@ -1,22 +1,24 @@
 const siteConfig = {
   name: 'ClipVlt',
   shortName: 'CV',
-  description: 'Download videos from Facebook, Instagram, TikTok & more in HD quality',
+  description: 'Free online video downloader - Save videos from Facebook, Instagram, TikTok, YouTube & more',
+  heroTitle: 'Download Videos From Any Platform',
+  heroSubtitle: 'Paste your link, choose quality, download instantly. No ads, no nonsense.',
   seo: {
-    title: 'ClipVault - Multi-Platform Video Downloader',
-    description: 'Free online video downloader. Save videos from Facebook, Instagram, TikTok, YouTube & more platforms in HD quality. No registration required.',
-    keywords: 'video downloader, facebook video downloader, instagram downloader, tiktok downloader, youtube downloader, free video download',
+    title: 'ClipVault - Free Multi-Platform Video Downloader',
+    description: 'Download videos from Facebook, Instagram, TikTok, YouTube, and more. Fast, free, and secure. No registration required.',
+    keywords: 'video downloader, facebook video downloader, instagram downloader, tiktok downloader, youtube downloader, free',
     author: 'ClipVlt',
   },
   logo: '/logo.png',
+  favicon: '/favicon.ico',
   accentColor: '#f97316',
   supportEmail: 'support@clipvault.com',
-  copyright: '2026 ClipVault. All rights reserved.',
+  copyright: `© ${new Date().getFullYear()} ClipVault. All rights reserved.`,
   footerLinks: [
-    { name: 'Privacy Policy', href: '/privacy' },
-    { name: 'Terms of Service', href: '/terms' },
+    { name: 'Privacy', href: '/privacy' },
+    { name: 'Terms', href: '/terms' },
     { name: 'DMCA', href: '/dmca' },
-    { name: 'Contact', href: 'mailto:support@clipvault.com' },
   ],
 };
 
