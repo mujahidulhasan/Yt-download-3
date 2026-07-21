@@ -4,6 +4,19 @@ import Link from 'next/link';
 import siteConfig from '../site.config';
 import { useToast } from './_app';
 
+const PLATFORMS = {
+  youtube: { icon: 'fa-youtube', color: '#ff0000' },
+  facebook: { icon: 'fa-facebook', color: '#1877f2' },
+  instagram: { icon: 'fa-instagram', color: '#e4405f' },
+  tiktok: { icon: 'fa-tiktok', color: '#000000' },
+  twitter: { icon: 'fa-x-twitter', color: '#1da1f2' },
+  reddit: { icon: 'fa-reddit', color: '#ff4500' },
+  vimeo: { icon: 'fa-vimeo', color: '#1ab7ea' },
+  pinterest: { icon: 'fa-pinterest', color: '#bd081c' },
+  twitch: { icon: 'fa-twitch', color: '#9146ff' },
+  soundcloud: { icon: 'fa-soundcloud', color: '#ff3300' },
+};
+
 export default function History() {
   const showToast = useToast();
   const [history, setHistory] = useState([]);
@@ -19,7 +32,7 @@ export default function History() {
   }, []);
 
   const loadHistory = () => {
-    const stored = localStorage.getItem('streamvault_history');
+    const stored = localStorage.getItem('clipvault_history');
     if (stored) {
       try {
         setHistory(JSON.parse(stored));
@@ -30,7 +43,7 @@ export default function History() {
   };
 
   const saveHistory = (newHistory) => {
-    localStorage.setItem('streamvault_history', JSON.stringify(newHistory));
+    localStorage.setItem('clipvault_history', JSON.stringify(newHistory));
     setHistory(newHistory);
   };
 
@@ -38,7 +51,7 @@ export default function History() {
     const updated = history.filter(item => item.id !== id);
     saveHistory(updated);
     setSelected(prev => prev.filter(s => s !== id));
-    showToast('Download removed from history', 'success');
+    showToast('Removed from history', 'success');
   };
 
   const deleteSelected = () => {
@@ -62,14 +75,10 @@ export default function History() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `streamvault_history_${Date.now()}.json`;
+    a.download = `clipvault_history_${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
     showToast('History exported', 'success');
-  };
-
-  const reDownload = (item) => {
-    window.open('/?url=' + encodeURIComponent(item.url), '_self');
   };
 
   const platforms = [...new Set(history.map(item => item.platform).filter(Boolean))];
@@ -79,11 +88,10 @@ export default function History() {
       if (filterType !== 'all' && item.type !== filterType) return false;
       if (filterPlatform !== 'all' && item.platform !== filterPlatform) return false;
       if (search) {
-        const query = search.toLowerCase();
+        const q = search.toLowerCase();
         return (
-          item.title?.toLowerCase().includes(query) ||
-          item.url?.toLowerCase().includes(query) ||
-          item.platform?.toLowerCase().includes(query)
+          (item.title || '').toLowerCase().includes(q) ||
+          item.url?.toLowerCase().includes(q)
         );
       }
       return true;
@@ -91,7 +99,6 @@ export default function History() {
     .sort((a, b) => {
       if (sortBy === 'newest') return b.timestamp - a.timestamp;
       if (sortBy === 'oldest') return a.timestamp - b.timestamp;
-      if (sortBy === 'title') return (a.title || '').localeCompare(b.title || '');
       return 0;
     });
 
@@ -100,17 +107,10 @@ export default function History() {
     video: history.filter(i => i.type === 'video').length,
     audio: history.filter(i => i.type === 'audio').length,
     thumbnail: history.filter(i => i.type === 'thumbnail').length,
-    today: history.filter(i => {
-      const today = new Date();
-      const itemDate = new Date(i.timestamp);
-      return itemDate.toDateString() === today.toDateString();
-    }).length,
   };
 
   const toggleSelect = (id) => {
-    setSelected(prev => 
-      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
-    );
+    setSelected(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
   };
 
   const selectAll = () => {
@@ -125,120 +125,92 @@ export default function History() {
     <>
       <Head>
         <title>Download History - {siteConfig.name}</title>
-        <meta name="description" content="View your download history" />
       </Head>
 
       <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }}>
-        {/* Header */}
-        <header style={{
-          background: 'var(--bg-secondary)',
-          borderBottom: '1px solid var(--border)',
-          padding: '16px 24px',
-          position: 'sticky',
-          top: 0,
-          zIndex: 100,
+        <header className="glass" style={{
+          position: 'sticky', top: 0, zIndex: 100,
+          padding: '10px 16px', borderBottom: '1px solid var(--border-glass)',
         }}>
-          <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Link href="/" style={{ textDecoration: 'none', color: 'var(--text-primary)' }}>
-              <h1 style={{ fontSize: 24, fontWeight: 700 }}>
-                <i className="fas fa-cloud-arrow-down" style={{ color: 'var(--accent)', marginRight: 12 }}></i>
-                {siteConfig.name}
-              </h1>
+          <div style={{ maxWidth: 1000, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <i className="fas fa-arrow-left" style={{ color: 'var(--text-secondary)' }}></i>
+              <img src={siteConfig.logo} alt="" style={{ height: 30, width: 30, borderRadius: 8 }} />
+              <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-primary)' }}>{siteConfig.name}</span>
             </Link>
-            <nav style={{ display: 'flex', gap: 24 }}>
-              <Link href="/" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
-                <i className="fas fa-home" style={{ marginRight: 6 }}></i>Home
+            <nav className="hide-mobile" style={{ display: 'flex', gap: 4 }}>
+              <Link href="/bulk" className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13 }}>
+                <i className="fas fa-layer-group"></i> Bulk
               </Link>
-              <Link href="/bulk" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
-                <i className="fas fa-layer-group" style={{ marginRight: 6 }}></i>Bulk
-              </Link>
-              <Link href="/settings" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
-                <i className="fas fa-gear" style={{ marginRight: 6 }}></i>Settings
+              <Link href="/settings" className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13 }}>
+                <i className="fas fa-gear"></i> Settings
               </Link>
             </nav>
           </div>
         </header>
 
-        <main style={{ maxWidth: 1200, margin: '0 auto', padding: '40px 24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
-            <div>
-              <h2 style={{ fontSize: 32, fontWeight: 800, marginBottom: 8, color: 'var(--text-primary)' }}>
-                <i className="fas fa-clock-rotate-left" style={{ color: 'var(--accent)', marginRight: 12 }}></i>
-                Download History
-              </h2>
-              <p style={{ fontSize: 16, color: 'var(--text-secondary)' }}>
-                {history.length} total downloads
-              </p>
-            </div>
-            {history.length > 0 && (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button
-                  onClick={exportHistory}
-                  style={{
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 10,
-                    padding: '10px 20px',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: 'var(--text-secondary)',
-                  }}
-                >
-                  <i className="fas fa-file-export" style={{ marginRight: 6 }}></i>Export
-                </button>
-                {selected.length > 0 && (
-                  <button
-                    onClick={() => setShowDeleteModal(true)}
-                    style={{
-                      background: '#ef4444',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: 10,
-                      padding: '10px 20px',
-                      cursor: 'pointer',
-                      fontSize: 13,
-                      fontWeight: 600,
-                    }}
-                  >
-                    <i className="fas fa-trash" style={{ marginRight: 6 }}></i>
-                    Delete ({selected.length})
-                  </button>
-                )}
+        <main style={{ maxWidth: 900, margin: '0 auto', padding: '20px 16px 60px' }}>
+          <div className="animate-fade-up" style={{ marginBottom: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 12,
+                    background: 'var(--accent)', opacity: 0.1,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'var(--accent)', fontSize: 20,
+                  }}>
+                    <i className="fas fa-clock-rotate-left"></i>
+                  </div>
+                  <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Download History
+                  </h1>
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginLeft: 56 }}>
+                  {history.length} total downloads
+                </p>
               </div>
-            )}
+              {history.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button onClick={exportHistory} className="btn-secondary" style={{ padding: '8px 14px', fontSize: 13 }}>
+                    <i className="fas fa-file-export"></i> Export
+                  </button>
+                  {selected.length > 0 && (
+                    <button onClick={() => setShowDeleteModal(true)}
+                      style={{
+                        background: '#ef4444', color: '#fff', border: 'none',
+                        borderRadius: 14, padding: '8px 14px', fontSize: 13,
+                        fontWeight: 600, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 6,
+                      }}>
+                      <i className="fas fa-trash"></i> Delete ({selected.length})
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Stats */}
           {history.length > 0 && (
             <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-              gap: 12,
-              marginBottom: 24,
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
+              gap: 8, marginBottom: 20,
             }}>
               {[
                 { label: 'Total', value: stats.total, icon: 'fa-download', color: 'var(--accent)' },
                 { label: 'Video', value: stats.video, icon: 'fa-video', color: '#3b82f6' },
                 { label: 'Audio', value: stats.audio, icon: 'fa-music', color: '#10b981' },
-                { label: 'Today', value: stats.today, icon: 'fa-calendar-day', color: '#8b5cf6' },
+                { label: 'Images', value: stats.thumbnail, icon: 'fa-image', color: '#8b5cf6' },
               ].map((stat, i) => (
-                <div
-                  key={i}
-                  style={{
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 12,
-                    padding: 16,
-                  }}
-                >
-                  <div style={{ fontSize: 20, color: stat.color, marginBottom: 8 }}>
+                <div key={i} className="glass-card" style={{ padding: 14, textAlign: 'center' }}>
+                  <div style={{ fontSize: 18, color: stat.color, marginBottom: 4 }}>
                     <i className={`fas ${stat.icon}`}></i>
                   </div>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)' }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)' }}>
                     {stat.value}
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     {stat.label}
                   </div>
                 </div>
@@ -248,364 +220,169 @@ export default function History() {
 
           {/* Filters */}
           {history.length > 0 && (
-            <div style={{
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--border)',
-              borderRadius: 14,
-              padding: 20,
-              marginBottom: 24,
-              display: 'flex',
-              gap: 16,
-              flexWrap: 'wrap',
-              alignItems: 'center',
+            <div className="glass-card" style={{
+              padding: 14, marginBottom: 16,
+              display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
             }}>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ position: 'relative' }}>
-                  <i className="fas fa-search" style={{
-                    position: 'absolute',
-                    left: 12,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    color: 'var(--text-tertiary)',
-                    fontSize: 14,
-                  }}></i>
-                  <input
-                    type="text"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search history..."
-                    style={{
-                      width: '100%',
-                      background: 'var(--bg-tertiary)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 10,
-                      padding: '10px 12px 10px 36px',
-                      fontSize: 14,
-                      color: 'var(--text-primary)',
-                    }}
-                  />
-                </div>
+              <div style={{ flex: 1, minWidth: 150, position: 'relative' }}>
+                <i className="fas fa-search" style={{
+                  position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+                  color: 'var(--text-tertiary)', fontSize: 13,
+                }}></i>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search..."
+                  className="glass-input"
+                  style={{ padding: '8px 12px 8px 34px', fontSize: 13 }}
+                />
               </div>
 
-              <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
-                style={{
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10,
-                  padding: '10px 12px',
-                  fontSize: 14,
-                  color: 'var(--text-primary)',
-                  minWidth: 130,
-                }}
-              >
+              <select value={filterType} onChange={(e) => setFilterType(e.target.value)}
+                className="glass-input" style={{ padding: '8px 12px', fontSize: 13, width: 'auto' }}>
                 <option value="all">All Types</option>
                 <option value="video">Video</option>
                 <option value="audio">Audio</option>
                 <option value="thumbnail">Thumbnail</option>
               </select>
 
-              <select
-                value={filterPlatform}
-                onChange={(e) => setFilterPlatform(e.target.value)}
-                style={{
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10,
-                  padding: '10px 12px',
-                  fontSize: 14,
-                  color: 'var(--text-primary)',
-                  minWidth: 130,
-                }}
-              >
+              <select value={filterPlatform} onChange={(e) => setFilterPlatform(e.target.value)}
+                className="glass-input" style={{ padding: '8px 12px', fontSize: 13, width: 'auto' }}>
                 <option value="all">All Platforms</option>
                 {platforms.map(p => (
                   <option key={p} value={p} style={{ textTransform: 'capitalize' }}>{p}</option>
                 ))}
               </select>
 
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                style={{
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10,
-                  padding: '10px 12px',
-                  fontSize: 14,
-                  color: 'var(--text-primary)',
-                  minWidth: 130,
-                }}
-              >
-                <option value="newest">Newest First</option>
-                <option value="oldest">Oldest First</option>
-                <option value="title">By Title</option>
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
+                className="glass-input" style={{ padding: '8px 12px', fontSize: 13, width: 'auto' }}>
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
               </select>
 
-              <button
-                onClick={selectAll}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--accent)',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {selected.length === filteredHistory.length ? 'Deselect All' : 'Select All'}
+              <button onClick={selectAll} className="btn-secondary" style={{ padding: '8px 14px', fontSize: 12 }}>
+                {selected.length === filteredHistory.length ? 'Deselect' : 'Select All'}
               </button>
             </div>
           )}
 
           {/* History List */}
           {filteredHistory.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {filteredHistory.map(item => (
-                <div
-                  key={item.id}
-                  style={{
-                    background: selected.includes(item.id) ? 'var(--bg-tertiary)' : 'var(--bg-secondary)',
-                    border: `1px solid ${selected.includes(item.id) ? 'var(--accent)' : 'var(--border)'}`,
-                    borderRadius: 12,
-                    padding: 16,
-                    transition: 'all 0.2s',
-                    cursor: 'pointer',
-                  }}
-                  onClick={() => toggleSelect(item.id)}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{
-                      width: 20,
-                      height: 20,
-                      borderRadius: 6,
-                      border: `2px solid ${selected.includes(item.id) ? 'var(--accent)' : 'var(--border)'}`,
-                      background: selected.includes(item.id) ? 'var(--accent)' : 'transparent',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      transition: 'all 0.2s',
-                    }}>
-                      {selected.includes(item.id) && (
-                        <i className="fas fa-check" style={{ color: '#fff', fontSize: 10 }}></i>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {filteredHistory.map(item => {
+                const p = PLATFORMS[item.platform];
+                const isSelected = selected.includes(item.id);
+                return (
+                  <div key={item.id} className="glass-card" style={{
+                    padding: 14, cursor: 'pointer',
+                    border: isSelected ? '1px solid var(--accent)' : '1px solid var(--border-glass)',
+                    background: isSelected ? 'var(--bg-tertiary)' : 'var(--bg-card)',
+                  }} onClick={() => toggleSelect(item.id)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{
+                        width: 22, height: 22, borderRadius: 6,
+                        border: `2px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}`,
+                        background: isSelected ? 'var(--accent)' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0, transition: 'all 0.15s',
+                      }}>
+                        {isSelected && <i className="fas fa-check" style={{ color: '#fff', fontSize: 10 }}></i>}
+                      </div>
+
+                      {item.thumbnail && (
+                        <img src={item.thumbnail} alt=""
+                          style={{
+                            width: 60, height: 42, objectFit: 'cover', borderRadius: 8, flexShrink: 0,
+                          }}
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
                       )}
-                    </div>
 
-                    {item.thumbnail && (
-                      <img
-                        src={item.thumbnail}
-                        alt={item.title}
-                        style={{
-                          width: 80,
-                          height: 56,
-                          objectFit: 'cover',
-                          borderRadius: 8,
-                          flexShrink: 0,
-                        }}
-                        onError={(e) => { e.target.style.display = 'none'; }}
-                      />
-                    )}
-
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {item.title || 'Untitled'}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.title || 'Untitled'}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                          {p && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                              <i className={`fab ${p.icon}`} style={{ color: p.color }}></i> {item.platform}
+                            </span>
+                          )}
+                          <span style={{ textTransform: 'capitalize' }}>{item.type}</span>
+                          {item.resolution && <span>{item.resolution}</span>}
+                          <span>{new Date(item.timestamp).toLocaleDateString()}</span>
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--text-secondary)' }}>
-                        <span style={{ textTransform: 'capitalize' }}>
-                          <i className={`fab fa-${item.platform}`} style={{ marginRight: 4 }}></i>
-                          {item.platform}
-                        </span>
-                        <span>
-                          <i className={`fas fa-${item.type === 'video' ? 'video' : item.type === 'audio' ? 'music' : 'image'}`} style={{ marginRight: 4 }}></i>
-                          {item.type}
-                        </span>
-                        {item.resolution && <span>{item.resolution}</span>}
-                        <span>{new Date(item.timestamp).toLocaleDateString()}</span>
-                      </div>
-                    </div>
 
-                    <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => reDownload(item)}
-                        title="Download Again"
-                        style={{
-                          background: 'var(--bg-tertiary)',
-                          border: 'none',
-                          borderRadius: 8,
-                          padding: '8px 12px',
-                          cursor: 'pointer',
-                          color: 'var(--accent)',
-                          fontSize: 13,
-                        }}
-                      >
-                        <i className="fas fa-download"></i>
-                      </button>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(item.url);
-                          showToast('URL copied', 'success');
-                        }}
-                        title="Copy URL"
-                        style={{
-                          background: 'var(--bg-tertiary)',
-                          border: 'none',
-                          borderRadius: 8,
-                          padding: '8px 12px',
-                          cursor: 'pointer',
-                          color: 'var(--text-secondary)',
-                          fontSize: 13,
-                        }}
-                      >
-                        <i className="fas fa-copy"></i>
-                      </button>
-                      <button
-                        onClick={() => deleteItem(item.id)}
-                        title="Delete"
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          borderRadius: 8,
-                          padding: '8px 12px',
-                          cursor: 'pointer',
-                          color: '#ef4444',
-                          fontSize: 13,
-                        }}
-                      >
-                        <i className="fas fa-trash"></i>
-                      </button>
+                      <div style={{ display: 'flex', gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                        <Link href={`/download?url=${encodeURIComponent(item.url)}`}
+                          className="btn-secondary" style={{ padding: '6px 10px', fontSize: 12 }}>
+                          <i className="fas fa-download"></i>
+                        </Link>
+                        <button onClick={() => deleteItem(item.id)}
+                          className="btn-icon" style={{ color: '#ef4444', padding: '6px 10px', fontSize: 12 }}>
+                          <i className="fas fa-trash"></i>
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : history.length === 0 ? (
-            <div style={{
-              textAlign: 'center',
-              padding: 80,
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--border)',
-              borderRadius: 14,
-            }}>
-              <div style={{ fontSize: 64, marginBottom: 16, color: 'var(--text-tertiary)' }}>
+            <div className="glass-card" style={{ padding: 60, textAlign: 'center' }}>
+              <div style={{ fontSize: 56, color: 'var(--text-tertiary)', opacity: 0.3, marginBottom: 14 }}>
                 <i className="fas fa-clock-rotate-left"></i>
               </div>
-              <h3 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
                 No Download History
               </h3>
-              <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24 }}>
-                Downloads will appear here once you start downloading videos
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>
+                Downloads will appear here
               </p>
-              <Link
-                href="/"
-                style={{
-                  background: 'var(--accent)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 10,
-                  padding: '12px 24px',
-                  textDecoration: 'none',
-                  fontSize: 14,
-                  fontWeight: 600,
-                  display: 'inline-block',
-                }}
-              >
-                <i className="fas fa-download" style={{ marginRight: 8 }}></i>
-                Start Downloading
+              <Link href="/" className="btn-primary">
+                <i className="fas fa-download"></i> Start Downloading
               </Link>
             </div>
           ) : (
-            <div style={{
-              textAlign: 'center',
-              padding: 60,
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--border)',
-              borderRadius: 14,
-            }}>
-              <div style={{ fontSize: 48, marginBottom: 16, color: 'var(--text-tertiary)' }}>
+            <div className="glass-card" style={{ padding: 40, textAlign: 'center' }}>
+              <div style={{ fontSize: 40, color: 'var(--text-tertiary)', opacity: 0.3, marginBottom: 10 }}>
                 <i className="fas fa-search"></i>
               </div>
-              <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
-                No Results Found
-              </h3>
-              <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-                Try adjusting your search or filters
-              </p>
+              <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>No results found</p>
             </div>
           )}
         </main>
 
         {/* Delete Modal */}
         {showDeleteModal && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0, 0, 0, 0.5)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 1000,
-              padding: 24,
-            }}
-            onClick={() => setShowDeleteModal(false)}
-          >
-            <div
-              style={{
-                background: 'var(--bg-secondary)',
-                borderRadius: 18,
-                padding: 32,
-                maxWidth: 400,
-                width: '100%',
-                boxShadow: 'var(--shadow-lg)',
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div style={{ fontSize: 32, color: '#ef4444', marginBottom: 16, textAlign: 'center' }}>
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, padding: 24,
+          }} onClick={() => setShowDeleteModal(false)}>
+            <div className="glass-card" style={{
+              padding: 28, maxWidth: 380, width: '100%',
+            }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ fontSize: 36, color: '#ef4444', textAlign: 'center', marginBottom: 12 }}>
                 <i className="fas fa-triangle-exclamation"></i>
               </div>
-              <h3 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', textAlign: 'center', marginBottom: 8 }}>
-                Delete {selected.length} item{selected.length > 1 ? 's' : ''}?
+              <h3 style={{ fontSize: 18, fontWeight: 700, textAlign: 'center', marginBottom: 6, color: 'var(--text-primary)' }}>
+                Delete {selected.length} items?
               </h3>
-              <p style={{ fontSize: 14, color: 'var(--text-secondary)', textAlign: 'center', marginBottom: 24 }}>
-                This action cannot be undone
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', textAlign: 'center', marginBottom: 20 }}>
+                This cannot be undone
               </p>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <button
-                  onClick={() => setShowDeleteModal(false)}
-                  style={{
-                    flex: 1,
-                    background: 'var(--bg-tertiary)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 10,
-                    padding: '12px',
-                    cursor: 'pointer',
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: 'var(--text-primary)',
-                  }}
-                >
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setShowDeleteModal(false)} className="btn-secondary" style={{ flex: 1, justifyContent: 'center' }}>
                   Cancel
                 </button>
-                <button
-                  onClick={deleteSelected}
-                  style={{
-                    flex: 1,
-                    background: '#ef4444',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 10,
-                    padding: '12px',
-                    cursor: 'pointer',
-                    fontSize: 14,
-                    fontWeight: 600,
-                  }}
-                >
+                <button onClick={deleteSelected} style={{
+                  flex: 1, background: '#ef4444', color: '#fff', border: 'none',
+                  borderRadius: 14, padding: '12px', fontSize: 14, fontWeight: 600,
+                  cursor: 'pointer',
+                }}>
                   Delete
                 </button>
               </div>
@@ -615,4 +392,4 @@ export default function History() {
       </div>
     </>
   );
-    }
+}
