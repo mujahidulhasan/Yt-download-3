@@ -1,21 +1,32 @@
-{
-  "name": "streamvault",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+  images: {
+    domains: ['localhost'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**',
+      },
+    ],
   },
-  "dependencies": {
-    "next": "14.1.0",
-    "react": "18.2.0",
-    "react-dom": "18.2.0",
-    "framer-motion": "11.0.3"
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+        ],
+      },
+    ];
   },
-  "devDependencies": {
-    "autoprefixer": "10.4.17",
-    "postcss": "8.4.35",
-    "tailwindcss": "3.4.1"
-  }
-}
+};
+
+module.exports = nextConfig;
