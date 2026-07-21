@@ -266,3 +266,133 @@ export default function Home() {
               </div>
             </div>
           </div>
+{/* Recent Downloads */}
+          {history.length > 0 && (
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <i className="fas fa-clock" style={{ color: 'var(--text-tertiary)' }}></i> Recent Downloads
+                </h3>
+                <Link href="/history" style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
+                  View all
+                </Link>
+              </div>
+              <div className="glass-card" style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {history.map(entry => {
+                  const p = detectPlatform(entry.url);
+                  return (
+                    <Link key={entry.id} href={`/download?url=${encodeURIComponent(entry.url)}`}
+                      style={{ textDecoration: 'none' }}>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: 10, borderRadius: 14,
+                        background: 'var(--bg-tertiary)',
+                        transition: 'all 0.2s',
+                      }}>
+                        <div style={{
+                          width: 42, height: 42, borderRadius: 10,
+                          overflow: 'hidden', flexShrink: 0,
+                          background: 'var(--bg-secondary)',
+                        }}>
+                          {entry.thumbnail ? (
+                            <img src={entry.thumbnail} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <i className={`fab ${p?.icon || 'fa-link'}`} style={{ color: p?.accent || 'var(--text-tertiary)' }}></i>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {entry.title || entry.url}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                            {p?.label || 'Unknown'} • {entry.resolution || entry.type}
+                          </div>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Feature Cards */}
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+            gap: 12, marginBottom: 28,
+          }}>
+            {[
+              { icon: 'fa-bolt', color: '#f97316', title: 'Blazing Fast', desc: 'Direct extraction at maximum speed.' },
+              { icon: 'fa-gem', color: '#3b82f6', title: 'Best Quality', desc: 'Up to 4K HDR video and high-bitrate audio.' },
+              { icon: 'fa-shield-halved', color: '#10b981', title: 'No Nonsense', desc: 'No popups, no fake buttons, no tracking.' },
+            ].map((f, i) => (
+              <div key={i} className="glass-card" style={{ padding: 20 }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: 12,
+                  background: f.color + '15', color: f.color,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 20, marginBottom: 12,
+                }}>
+                  <i className={`fas ${f.icon}`}></i>
+                </div>
+                <h4 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, color: 'var(--text-primary)' }}>
+                  {f.title}
+                </h4>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  {f.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* FAQ */}
+          <div style={{ marginBottom: 28 }}>
+            <h3 style={{ textAlign: 'center', fontSize: 18, fontWeight: 800, marginBottom: 16, color: 'var(--text-primary)' }}>
+              Frequently Asked Questions
+            </h3>
+            <div className="glass-card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[
+                { q: 'Is this tool free?', a: `Yes, ${siteConfig.name} is completely free with no limits.` },
+                { q: 'What platforms are supported?', a: 'YouTube, TikTok, Instagram, X/Twitter, Reddit, Vimeo, and hundreds more.' },
+                { q: 'Where do files go?', a: "Files download directly to your device's Downloads folder." },
+              ].map((faq, i) => (
+                <div key={i} style={{ padding: 14, borderRadius: 14, background: 'var(--bg-tertiary)' }}>
+                  <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, color: 'var(--text-primary)' }}>{faq.q}</h4>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{faq.a}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <footer style={{ textAlign: 'center', padding: '20px 0', borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 10 }}>
+              <img src={siteConfig.logo} alt="" style={{ height: 24 }} />
+              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>{siteConfig.name}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
+              {siteConfig.footerLinks.map(link => (
+                <Link key={link.href} href={link.href} style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 12 }}>
+                  {link.name}
+                </Link>
+              ))}
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{siteConfig.copyright}</p>
+          </footer>
+        </main>
+      </div>
+
+      <style jsx>{`
+        @media (max-width: 640px) {
+          .show-mobile { display: flex !important; }
+        }
+        @media (min-width: 641px) {
+          .show-mobile { display: none !important; }
+        }
+      `}</style>
+    </>
+  );
+}
